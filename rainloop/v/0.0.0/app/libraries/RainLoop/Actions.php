@@ -235,74 +235,77 @@ class Actions
 	 */
 	private function fabrica($sName, $oAccount = null)
 	{
-		$oResult = null;
+		$mResult = null;
 		$this->Plugins()
-			->RunHook('main.fabrica', array($sName, &$oResult), false)
-			->RunHook('main.fabrica[2]', array($sName, &$oResult, $oAccount), false)
+			->RunHook('main.fabrica', array($sName, &$mResult), false)
+			->RunHook('main.fabrica[2]', array($sName, &$mResult, $oAccount), false)
 		;
 
-		if (null === $oResult)
+		if (null === $mResult)
 		{
 			switch ($sName)
 			{
 				case 'files':
 					// RainLoop\Providers\Files\IFiles
-					$oResult = new \RainLoop\Providers\Files\FileStorage(APP_PRIVATE_DATA.'storage/files');
+					$mResult = new \RainLoop\Providers\Files\FileStorage(APP_PRIVATE_DATA.'storage/files');
 					break;
 				case 'storage':
 				case 'storage-local':
 					// RainLoop\Providers\Storage\IStorage
-					$oResult = new \RainLoop\Providers\Storage\FileStorage(
+					$mResult = new \RainLoop\Providers\Storage\FileStorage(
 						APP_PRIVATE_DATA.'storage', 'storage-local' === $sName);
 					break;
 				case 'settings':
 				case 'settings-local':
 					// RainLoop\Providers\Settings\ISettings
-					$oResult = new \RainLoop\Providers\Settings\DefaultSettings(
+					$mResult = new \RainLoop\Providers\Settings\DefaultSettings(
 						$this->StorageProvider('settings-local' === $sName));
 					break;
 				case 'login':
 					// \RainLoop\Providers\Login\LoginInterface
-					$oResult = new \RainLoop\Providers\Login\DefaultLogin();
+					$mResult = new \RainLoop\Providers\Login\DefaultLogin();
 					break;
 				case 'domain':
 					// \RainLoop\Providers\Domain\DomainAdminInterface
-					$oResult = new \RainLoop\Providers\Domain\DefaultDomain(APP_PRIVATE_DATA.'domains', $this->Cacher());
+					$mResult = new \RainLoop\Providers\Domain\DefaultDomain(APP_PRIVATE_DATA.'domains', $this->Cacher());
 					break;
 				case 'filters':
 					// \RainLoop\Providers\Filters\FiltersInterface
-					$oResult = new \RainLoop\Providers\Filters\SieveStorage(
+					$mResult = new \RainLoop\Providers\Filters\SieveStorage(
 						$this->Plugins(), $this->Config()
 					);
 					break;
 				case 'address-book':
 					// \RainLoop\Providers\AddressBook\AddressBookInterface
 
-					if (!\RainLoop\Utils::IsOwnCloud()) // disabled for ownCloud
-					{
-						$sDsn = \trim($this->Config()->Get('contacts', 'pdo_dsn', ''));
-						$sUser = \trim($this->Config()->Get('contacts', 'pdo_user', ''));
-						$sPassword = (string) $this->Config()->Get('contacts', 'pdo_password', '');
+					$sDsn = \trim($this->Config()->Get('contacts', 'pdo_dsn', ''));
+					$sUser = \trim($this->Config()->Get('contacts', 'pdo_user', ''));
+					$sPassword = (string) $this->Config()->Get('contacts', 'pdo_password', '');
 
-						$sDsnType = $this->ValidateContactPdoType(\trim($this->Config()->Get('contacts', 'type', 'sqlite')));
-						if ('sqlite' === $sDsnType)
-						{
-							$oResult = new \RainLoop\Providers\AddressBook\PdoAddressBook(
-								'sqlite:'.APP_PRIVATE_DATA.'AddressBook.sqlite', '', '', 'sqlite');
-						}
-						else
-						{
-							$oResult = new \RainLoop\Providers\AddressBook\PdoAddressBook($sDsn, $sUser, $sPassword, $sDsnType);
-						}
+					$sDsnType = $this->ValidateContactPdoType(\trim($this->Config()->Get('contacts', 'type', 'sqlite')));
+					if ('sqlite' === $sDsnType)
+					{
+						$mResult = new \RainLoop\Providers\AddressBook\PdoAddressBook(
+							'sqlite:'.APP_PRIVATE_DATA.'AddressBook.sqlite', '', '', 'sqlite');
+					}
+					else
+					{
+						$mResult = new \RainLoop\Providers\AddressBook\PdoAddressBook($sDsn, $sUser, $sPassword, $sDsnType);
 					}
 					break;
 				case 'suggestions':
-					// \RainLoop\Providers\Suggestions\ISuggestions
-//					$oResult = new \RainLoop\Providers\Suggestions\TestSuggestions();
 
-					if (\RainLoop\Utils::IsOwnCloud())
+					if (null === $mResult)
 					{
-						$oResult = new \RainLoop\Providers\Suggestions\OwnCloudSuggestions();
+						$mResult = array();
+					}
+
+					// \RainLoop\Providers\Suggestions\ISuggestions
+//					$mResult[] = new \RainLoop\Providers\Suggestions\TestSuggestions();
+
+					if (\is_array($mResult) && \RainLoop\Utils::IsOwnCloud())
+					{
+						$mResult[] = new \RainLoop\Providers\Suggestions\OwnCloudSuggestions();
 					}
 
 					break;
@@ -311,19 +314,22 @@ class Actions
 					break;
 				case 'two-factor-auth':
 					// \RainLoop\Providers\TwoFactorAuth\TwoFactorAuthInterface
-					$oResult = new \RainLoop\Providers\TwoFactorAuth\GoogleTwoFactorAuth();
+					$mResult = new \RainLoop\Providers\TwoFactorAuth\GoogleTwoFactorAuth();
 					break;
 			}
 		}
 
-		if ($oResult && \method_exists($oResult, 'SetLogger'))
+		foreach (\is_array($mResult) ? $mResult : array($mResult) as $oItem)
 		{
-			$oResult->SetLogger($this->Logger());
+			if ($oItem && \method_exists($oItem, 'SetLogger'))
+			{
+				$oItem->SetLogger($this->Logger());
+			}
 		}
 
-		$this->Plugins()->RunHook('filter.fabrica', array($sName, &$oResult, $oAccount), false);
+		$this->Plugins()->RunHook('filter.fabrica', array($sName, &$mResult, $oAccount), false);
 
-		return $oResult;
+		return $mResult;
 	}
 
 	/**
@@ -827,7 +833,8 @@ class Actions
 	{
 		if (null === $this->oSuggestionsProvider)
 		{
-			$this->oSuggestionsProvider = new \RainLoop\Providers\Suggestions($this->fabrica('suggestions'));
+			$this->oSuggestionsProvider = new \RainLoop\Providers\Suggestions(
+				$this->fabrica('suggestions'));
 		}
 
 		return $this->oSuggestionsProvider;
@@ -1292,6 +1299,7 @@ class Actions
 			'LoginBackground' => '',
 			'LoginCss' => '',
 			'UserLogo' => '',
+			'UserLogoTitle' => '',
 			'UserCss' => '',
 			'WelcomePageUrl' => '',
 			'WelcomePageDisplay' => 'none',
@@ -1383,6 +1391,7 @@ class Actions
 			$aResult['LoginDescription'] = $oConfig->Get('branding', 'login_desc', '');
 			$aResult['LoginPowered'] = !!$oConfig->Get('branding', 'login_powered', true);
 			$aResult['UserLogo'] = $oConfig->Get('branding', 'user_logo', '');
+			$aResult['UserLogoTitle'] = $oConfig->Get('branding', 'user_logo_title', '');
 			$aResult['UserCss'] = $oConfig->Get('branding', 'user_css', '');
 			$aResult['WelcomePageUrl'] = $oConfig->Get('branding', 'welcome_page_url', '');
 			$aResult['WelcomePageDisplay'] = \strtolower($oConfig->Get('branding', 'welcome_page_display', 'none'));
@@ -3524,7 +3533,7 @@ class Actions
 
 		if ($this->HasOneOfActionParams(array(
 			'LoginLogo', 'LoginBackground', 'LoginDescription', 'LoginCss', 'LoginPowered',
-			'UserLogo', 'UserCss',
+			'UserLogo', 'UserLogoTitle', 'UserCss',
 			'WelcomePageUrl', 'WelcomePageDisplay'
 		)) && $this->PremType())
 		{
@@ -3535,6 +3544,7 @@ class Actions
 			$this->setConfigFromParams($oConfig, 'LoginPowered', 'branding', 'login_powered', 'bool');
 
 			$this->setConfigFromParams($oConfig, 'UserLogo', 'branding', 'user_logo', 'string');
+			$this->setConfigFromParams($oConfig, 'UserLogoTitle', 'branding', 'user_logo_title', 'string');
 			$this->setConfigFromParams($oConfig, 'UserCss', 'branding', 'user_css', 'string');
 
 			$this->setConfigFromParams($oConfig, 'WelcomePageUrl', 'branding', 'welcome_page_url', 'string');
@@ -7071,8 +7081,7 @@ class Actions
 			$oSuggestionsProvider = $this->SuggestionsProvider();
 			if ($oSuggestionsProvider && $oSuggestionsProvider->IsActive())
 			{
-				$iSuggestionLimit = $iLimit - \count($aResult);
-				$aSuggestionsProviderResult = $oSuggestionsProvider->Process($oAccount, $sQuery, $iSuggestionLimit);
+				$aSuggestionsProviderResult = $oSuggestionsProvider->Process($oAccount, $sQuery, $iLimit);
 				if (\is_array($aSuggestionsProviderResult) && 0 < \count($aSuggestionsProviderResult))
 				{
 					$aResult = \array_merge($aResult, $aSuggestionsProviderResult);
